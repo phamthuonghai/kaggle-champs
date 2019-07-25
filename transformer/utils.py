@@ -1,6 +1,8 @@
+import json
 import logging
 import pickle
 
+import csv
 import fire
 import numpy as np
 import os
@@ -125,7 +127,22 @@ def get_dataset(filepath, batch_size, val=None, bond_target='all'):
             return d.batch(batch_size=batch_size, drop_remainder=False)
 
 
+def convert_mg(input_path='../input/MG.json', output_path='../input/MG.pkl'):
+    res = {}
+    with open(input_path, 'r') as in_file:
+        for line in tqdm(csv.reader(in_file, delimiter=',')):
+            idx = 'dsgdb9nsd_' + line[0][4:]
+            data = json.loads(line[1])
+            res[idx] = data
+
+    logging.info(f'Saving {len(res)} molecules to {output_path}')
+    with open(output_path, 'wb') as out_file:
+        pickle.dump(res, out_file)
+
+
 if __name__ == '__main__':
-    fire.Fire({
-        'preprocess': preprocess,
-    })
+    # fire.Fire({
+    #     'preprocess': preprocess,
+    #     'convert_mg': convert_mg,
+    # })
+    fire.Fire()
