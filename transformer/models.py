@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from utils import ATOM_NUM, BOND_NUM
+from utils import ATOM_NUM, BOND_NUM, NUM_ATOM_FEATURES, NUM_BOND_FEATURES
 
 
 def scaled_dot_product_attention(q, k, v, mask, relative_position=None):
@@ -130,15 +130,23 @@ class EncoderLayer(tf.keras.layers.Layer):
 
 
 class RelativeAttentionEmbedding(tf.keras.layers.Layer):
-    def __init__(self, hparams, bond_embedding=None):
+    def __init__(self, hparams, bond_embeddings=None):
         super(RelativeAttentionEmbedding, self).__init__()
-        self.bond_embedding = bond_embedding
-        self.bond_transform = tf.keras.layers.Dense(hparams.d_model // hparams.num_heads, activation='relu')
+        self.bond_embeddings = bond_embeddings
+        self.bond_transforms = {
+            'bond_type': tf.keras.layers.Dense(hparams.d_model // hparams.num_heads, activation='relu')
+        }
+        for bond_ft in NUM_BOND_FEATURES.keys():
+            self.bond_transforms[bond_ft] = tf.keras.layers.Dense(
+                hparams.d_model // hparams.num_heads, activation='relu')
         self.dist_transform = tf.keras.layers.Dense(hparams.d_model // hparams.num_heads, activation='relu')
 
     def call(self, feature):
-        return self.bond_transform(self.bond_embedding(feature['bond_type'])) + \
-                self.dist_transform(feature['dist'])
+        x = self.dist_transform(tf.concat([feature['dist'], tf.expand_dims(feature['spatial_distance'], axis=-1)], -1))
+        x += self.bond_transforms['bond_type'](self.bond_embeddings['bond_type'](feature['bond_type']))
+        for bond_ft in NUM_BOND_FEATURES.keys():
+            x += self.bond_transforms[bond_ft](self.bond_embeddings[bond_ft](feature[bond_ft]))
+        return x
 
 
 class Encoder(tf.keras.layers.Layer):
@@ -151,17 +159,26 @@ class Encoder(tf.keras.layers.Layer):
         assert hparams.d_model % hparams.num_heads == 0
         self.depth = self.d_model // self.num_heads
 
-        self.atom_embedding = tf.keras.layers.Embedding(ATOM_NUM, self.d_model)
-        self.bond_embedding = tf.keras.layers.Embedding(BOND_NUM, self.depth)
+        # Atom features' embeddings
+        self.atom_embeddings = {'atom': tf.keras.layers.Embedding(ATOM_NUM, self.d_model)}
+        for atom_ft, ft_size in NUM_ATOM_FEATURES.items():
+            self.atom_embeddings[atom_ft] = tf.keras.layers.Embedding(ft_size, self.d_model)
+
+        # Bond features' embeddings
+        self.bond_embeddings = {'bond_type': tf.keras.layers.Embedding(BOND_NUM, self.depth)}
+        for bond_ft, ft_size in NUM_BOND_FEATURES.items():
+            self.bond_embeddings[bond_ft] = tf.keras.layers.Embedding(ft_size, self.depth)
+
         self.pos_encoding = tf.keras.layers.Dense(self.d_model, activation='relu')
+        self.charge_encoding = tf.keras.layers.Dense(self.d_model, activation='relu')
 
         self.rel_att = [None] * self.num_layers
         if hparams.rel_att is not None:
             the_first = hparams.rel_att[0]
-            self.rel_att[the_first] = RelativeAttentionEmbedding(hparams, self.bond_embedding)
+            self.rel_att[the_first] = RelativeAttentionEmbedding(hparams, self.bond_embeddings)
             for l in hparams.rel_att[1:]:
                 self.rel_att[l] = self.rel_att[the_first] if hparams.shared_rel_att else \
-                    RelativeAttentionEmbedding(hparams, self.bond_embedding)
+                    RelativeAttentionEmbedding(hparams, self.bond_embeddings)
 
         self.enc_layers = [EncoderLayer(hparams) for _ in range(hparams.num_layers)]
 
@@ -169,7 +186,11 @@ class Encoder(tf.keras.layers.Layer):
 
     def call(self, feature, training, mask):
         # adding embedding and position encoding.
-        x = self.atom_embedding(feature['atom'])  # (batch_size, input_seq_len, d_model)
+        x = self.atom_embeddings['atom'](feature['atom'])  # (batch_size, input_seq_len, d_model)
+        for atom_ft in NUM_ATOM_FEATURES.keys():
+            x += self.atom_embeddings[atom_ft](feature[atom_ft])
+        x += self.charge_encoding(tf.stack(
+            [feature['formal_charge'], feature['partial_charge']], -1))
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
         x += self.pos_encoding(feature['pos'])
 

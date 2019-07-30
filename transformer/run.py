@@ -62,7 +62,7 @@ def eval_step(feature, transformer):
     return loss
 
 
-def train(n_epochs=1000, train_batch_size=100, hparam_set='default', data_path='./data',
+def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='./data',
           log_freq=500, val_size=1000, bond_target='all'):
     hparams = hyperparams.default()
     checkpoint_path = f'./checkpoints/{bond_target}/{hparam_set}/'
