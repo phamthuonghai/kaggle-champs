@@ -1,4 +1,5 @@
 import os
+import shutil
 import time
 
 import fire
@@ -63,7 +64,7 @@ def eval_step(feature, transformer):
 
 
 def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='./data',
-          log_freq=500, val_size=1000, bond_target='all'):
+          log_freq=500, val_size=1000, bond_target='all', load_ckpt=False):
     hparams = hyperparams.default()
     checkpoint_path = f'./checkpoints/{bond_target}/{hparam_set}/'
 
@@ -85,8 +86,12 @@ def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='
         ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
         # if a checkpoint exists, restore the latest checkpoint.
         if ckpt_manager.latest_checkpoint:
-            ckpt.restore(ckpt_manager.latest_checkpoint)
-            print('Latest checkpoint restored!')
+            if load_ckpt:
+                ckpt.restore(ckpt_manager.latest_checkpoint)
+                print('Latest checkpoint restored!')
+            else:
+                print(f'{checkpoint_path} is not empty')
+                exit(0)
 
         # Training
         for epoch in range(n_epochs):

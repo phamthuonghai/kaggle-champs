@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from utils import ATOM_NUM, BOND_NUM, NUM_ATOM_FEATURES, NUM_BOND_FEATURES
+from utils import ATOM_NUM, BOND_NUM, NUM_ATOM_FEATURES, NUM_BOND_FEATURES, MAX_NUM_ATOMS
 
 
 def scaled_dot_product_attention(q, k, v, mask, relative_position=None):
@@ -207,13 +207,20 @@ class Encoder(tf.keras.layers.Layer):
         return x, att_weights
 
 
+def cartesian(a, b):
+    tile_a = tf.tile(tf.expand_dims(a, 2), [1, 1, MAX_NUM_ATOMS, 1])
+    tile_b = tf.tile(tf.expand_dims(b, 1), [1, MAX_NUM_ATOMS, 1, 1])
+    return tf.concat([tile_a, tile_b], axis=-1)
+
+
 class Transformer(tf.keras.Model):
     def __init__(self, hparams):
         super(Transformer, self).__init__()
 
         self.encoder = Encoder(hparams)
 
-        self.final_layer = tf.keras.layers.Dense(1)
+        self.final_layers = [tf.keras.layers.Dense(size, activation='relu') for size in hparams.classifier]
+        self.final_layers += [tf.keras.layers.Dense(1)]
 
     def call(self, feature, training=False, mask=None):
         # (batch_size, input_seq_len, d_model), (batch_size, num_heads, input_seq_len, input_seq_len)
@@ -221,6 +228,11 @@ class Transformer(tf.keras.Model):
 
         att_weights = tf.transpose(att_weights, [0, 2, 3, 1])
 
-        final_output = tf.squeeze(self.final_layer(att_weights), [3])  # (batch_size, input_seq_len, input_seq_len)
+        final_output = tf.concat([cartesian(enc_output, enc_output), att_weights], -1)
+
+        for layer in self.final_layers:
+            final_output = layer(final_output)
+
+        final_output = tf.squeeze(final_output, [3])  # (batch_size, input_seq_len, input_seq_len)
 
         return final_output, att_weights
