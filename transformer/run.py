@@ -1,13 +1,15 @@
 import os
-import shutil
 import time
 
 import fire
 import tensorflow as tf
 
-from utils import get_dataset
-from models import Transformer
 import hyperparams
+from models import Transformer
+from utils import get_dataset
+
+
+LOSSES = ['log_loss', 'loss', 'mse', 'huber1']
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -27,9 +29,13 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 
 def loss_function(real, pred, mask):
-    loss = tf.boolean_mask(tf.abs(pred - real), mask)
-    # return tf.math.log(tf.reduce_mean(loss))
-    return tf.reduce_mean(loss)
+    losses = {
+        'loss': tf.reduce_mean(tf.boolean_mask(tf.abs(pred - real), mask)),
+        'mse': tf.reduce_mean(tf.boolean_mask(tf.square(pred - real), mask)),
+        'huber1': tf.losses.Huber(delta=1.)(real, pred, mask),
+    }
+    losses['log_loss'] = tf.math.log(losses['loss'])
+    return losses
 
 
 def create_padding_mask(seq):
@@ -41,31 +47,32 @@ def create_padding_mask(seq):
 
 
 @tf.function
-def train_step(feature, transformer, optimizer, train_loss):
+def train_step(feature, transformer, optimizer, train_losses, optimize_loss):
     enc_padding_mask = create_padding_mask(feature['atom'])
 
     with tf.GradientTape() as tape:
         predictions, _ = transformer(feature, True, enc_padding_mask)
-        loss = loss_function(feature['target'], predictions, feature['target_mask'])
+        losses = loss_function(feature['target'], predictions, feature['target_mask'])
 
-    gradients = tape.gradient(loss, transformer.trainable_variables)
+    gradients = tape.gradient(losses[optimize_loss], transformer.trainable_variables)
     optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
 
-    train_loss(loss)
+    for loss in LOSSES:
+        train_losses[loss](losses[loss])
 
 
 def eval_step(feature, transformer):
     enc_padding_mask = create_padding_mask(feature['atom'])
 
     predictions, _ = transformer(feature, False, enc_padding_mask)
-    loss = loss_function(feature['target'], predictions, feature['target_mask'])
+    losses = loss_function(feature['target'], predictions, feature['target_mask'])
 
-    return loss
+    return losses
 
 
 def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='./data',
           log_freq=500, val_size=1000, bond_target='all', load_ckpt=False):
-    hparams = hyperparams.default()
+    hparams = hyperparams.get_hparams(hparam_set)
     checkpoint_path = f'./checkpoints/{bond_target}/{hparam_set}/'
 
     summary_writer = tf.summary.create_file_writer(f'./summaries/{bond_target}/{hparam_set}/')
@@ -78,7 +85,9 @@ def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='
         # Model def
         learning_rate = CustomSchedule(hparams.d_model, hparams.warmup_steps)
         optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-        train_loss = tf.keras.metrics.Mean(name='train_loss')
+        train_losses = {}
+        for loss in LOSSES:
+            train_losses[loss] = tf.keras.metrics.Mean(name=f'train_{loss}')
         transformer = Transformer(hparams)
 
         # Checkpoint init
@@ -96,26 +105,30 @@ def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='
         # Training
         for epoch in range(n_epochs):
             start = time.time()
-            train_loss.reset_states()
+            for loss in LOSSES:
+                train_losses[loss].reset_states()
 
             for (batch, feature) in enumerate(train_dataset):
-                train_step(feature, transformer, optimizer, train_loss)
+                train_step(feature, transformer, optimizer, train_losses, hparams.loss)
 
                 if tf.equal(optimizer.iterations % log_freq, 0):
-                    tf.summary.scalar('train/loss', train_loss.result(), step=optimizer.iterations)
+                    for loss in LOSSES:
+                        tf.summary.scalar(f'train/{loss}', train_losses[loss].result(), step=optimizer.iterations)
 
                 if batch % log_freq == 0:  # not similar to step-wise log_freq above
-                    print('Epoch {} batch {} loss {:.4f}'.format(epoch + 1, batch, train_loss.result()))
+                    print('Epoch {} batch {} loss {:.4f}'.format(epoch + 1, batch, train_losses[hparams.loss].result()))
 
             eval_losses = [eval_step(feature, transformer) for feature in val_dataset]
-            eval_loss = sum(eval_losses) / len(eval_losses)
-            tf.summary.scalar('val/loss', eval_loss, step=optimizer.iterations)
+            for loss in LOSSES:
+                sep_loss = [l[loss] for l in eval_losses]
+                sep_loss = sum(sep_loss) / len(sep_loss)
+                tf.summary.scalar(f'val/{loss}', sep_loss, step=optimizer.iterations)
+                if loss == hparams.loss:
+                    print('Epoch {}, train_loss {:.4f}, eval_loss {:.4f}, in {:.2f}s'.format(
+                        epoch + 1, train_losses[hparams.loss].result(), sep_loss, time.time() - start))
 
             ckpt_save_path = ckpt_manager.save()
             print('Saving checkpoint for epoch {} at {}'.format(epoch + 1, ckpt_save_path))
-
-            print('Epoch {}, train_loss {:.4f}, eval_loss {:.4f}, in {:.2f}s'.format(
-                epoch + 1, train_loss.result(), eval_loss, time.time() - start))
 
 
 if __name__ == '__main__':
