@@ -6,68 +6,12 @@ import tensorflow as tf
 
 import hyperparams
 from models import Transformer
+from ops import CustomSchedule, train_step, eval_step
 from utils import get_dataset
 
 
-LOSSES = ['log_loss', 'loss', 'mse', 'huber1']
-
-
-class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, d_model, warmup_steps=4000):
-        super(CustomSchedule, self).__init__()
-
-        self.d_model = d_model
-        self.d_model = tf.cast(self.d_model, tf.float32)
-        self.warmup_steps = warmup_steps
-
-    def __call__(self, step):
-        arg1 = tf.math.rsqrt(step)
-        arg2 = step * (self.warmup_steps ** -1.5)
-        lr = tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
-
-        return lr
-
-
-def loss_function(real, pred, mask):
-    losses = {
-        'loss': tf.reduce_mean(tf.boolean_mask(tf.abs(pred - real), mask)),
-        'mse': tf.reduce_mean(tf.boolean_mask(tf.square(pred - real), mask)),
-        'huber1': tf.losses.Huber(delta=1.)(real, pred, mask),
-    }
-    losses['log_loss'] = tf.math.log(losses['loss'])
-    return losses
-
-
-def create_padding_mask(seq):
-    seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
-
-    # add extra dimensions so that we can add the padding
-    # to the attention logits.
-    return seq[:, tf.newaxis, tf.newaxis, :]  # (batch_size, 1, 1, seq_len)
-
-
-@tf.function
-def train_step(feature, transformer, optimizer, train_losses, optimize_loss):
-    enc_padding_mask = create_padding_mask(feature['atom'])
-
-    with tf.GradientTape() as tape:
-        predictions, _ = transformer(feature, True, enc_padding_mask)
-        losses = loss_function(feature['target'], predictions, feature['target_mask'])
-
-    gradients = tape.gradient(losses[optimize_loss], transformer.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
-
-    for loss in LOSSES:
-        train_losses[loss](losses[loss])
-
-
-def eval_step(feature, transformer):
-    enc_padding_mask = create_padding_mask(feature['atom'])
-
-    predictions, _ = transformer(feature, False, enc_padding_mask)
-    losses = loss_function(feature['target'], predictions, feature['target_mask'])
-
-    return losses
+# LOSSES = ['log_loss', 'loss', 'mse', 'huber1']
+LOSSES = ['log_loss', 'loss', 'mse']
 
 
 def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='./data',
