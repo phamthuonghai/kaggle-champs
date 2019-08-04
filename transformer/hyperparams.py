@@ -1,7 +1,7 @@
 import sys
 
 
-class Default:
+class Legacy:
     num_layers = 5
     d_model = 128
     dff = 128
@@ -12,27 +12,42 @@ class Default:
     shared_rel_att = False
     warmup_steps = 1000
     loss = 'loss'  # MAE
+    lr = 'custom'
 
 
-def default():
-    return Default()
+class Default:
+    num_layers = 6
+    d_model = 256
+    dff = 256
+    num_heads = 64
+    dropout_rate = 0.1
+    rel_att = (0, 1, 2, 3, 4, 5)
+    classifier = (512, 512)
+    shared_rel_att = False
+    warmup_steps = 1000
+    loss = 'loss'
+    lr = 'custom'
+
+
+def legacy():
+    return Legacy()
 
 
 def long_cls():
-    hparams = Default()
+    hparams = Legacy()
     hparams.classifier = (128, 128, 128, 64)
     return hparams
 
 
 def broad():
-    hparams = Default()
+    hparams = Legacy()
     hparams.d_model = 512
     hparams.classifier = (512, 256)
     return hparams
 
 
 def broad2():
-    hparams = Default()
+    hparams = Legacy()
     hparams.d_model = 512
     hparams.dff = 512
     hparams.classifier = (512, 256)
@@ -40,7 +55,7 @@ def broad2():
 
 
 def broad3():
-    hparams = Default()
+    hparams = Legacy()
     hparams.d_model = 512
     hparams.dff = 512
     hparams.classifier = (1024, 512)
@@ -73,7 +88,7 @@ def broad_logloss():
 
 
 def broader():
-    hparams = Default()
+    hparams = Legacy()
     hparams.num_layers = 4
     hparams.rel_att = (0, 1, 2, 3)
     hparams.d_model = 1024
@@ -95,18 +110,22 @@ def broada512():
     hparams.dff = 512
 
 
-def new():
-    hparams = default()
-    hparams.num_layers = 6
-    hparams.d_model = 256
-    hparams.dff = 256
-    hparams.num_heads = 64
-    hparams.dropout_rate = 0.1
-    hparams.rel_att = (0, 1, 2, 3, 4, 5)
-    hparams.classifier = (512, 512)
-    hparams.shared_rel_att = False
-    hparams.warmup_steps = 1000
-    hparams.loss = 'loss'  # MAE
+def default():
+    hparams = Default()
+    return hparams
+
+
+def karpathy():
+    hparams = Default()
+    hparams.loss = 'loss'
+    hparams.lr = 'karpathy'
+    return hparams
+
+
+def karpathy_logloss():
+    hparams = Default()
+    hparams.loss = 'log_loss'
+    hparams.lr = 'karpathy'
     return hparams
 
 

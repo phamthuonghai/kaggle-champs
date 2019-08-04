@@ -1,15 +1,18 @@
+import sys
+
 import tensorflow as tf
 
-from run import LOSSES
+# LOSSES = ['log_loss', 'loss', 'mse', 'huber1']
+LOSSES = ['log_loss', 'loss', 'mse']
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, d_model, warmup_steps=4000):
+    def __init__(self, hparams):
         super(CustomSchedule, self).__init__()
 
-        self.d_model = d_model
+        self.d_model = hparams.d_model
         self.d_model = tf.cast(self.d_model, tf.float32)
-        self.warmup_steps = warmup_steps
+        self.warmup_steps = hparams.warmup_steps
 
     def __call__(self, step):
         arg1 = tf.math.rsqrt(step)
@@ -19,11 +22,23 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         return lr
 
 
+class KarpathySchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, hparams):
+        super(KarpathySchedule, self).__init__()
+
+    def __call__(self, step):
+        return 3e-4
+
+
+def get_schedule(name):
+    return getattr(sys.modules[__name__], name.title() + 'Schedule')
+
+
 def loss_function(real, pred, mask):
     losses = {
         'loss': tf.reduce_mean(tf.boolean_mask(tf.abs(pred - real), mask)),
         'mse': tf.reduce_mean(tf.boolean_mask(tf.square(pred - real), mask)),
-        'huber1': tf.losses.Huber(delta=1.)(real, pred, mask),
+        # 'huber1': tf.losses.Huber(delta=1.)(real, pred, mask),
     }
     losses['log_loss'] = tf.math.log(losses['loss'])
     return losses

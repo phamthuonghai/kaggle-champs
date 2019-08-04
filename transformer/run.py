@@ -6,12 +6,8 @@ import tensorflow as tf
 
 import hyperparams
 from models import Transformer
-from ops import CustomSchedule, train_step, eval_step
+from ops import get_schedule, train_step, eval_step, LOSSES
 from utils import get_dataset
-
-
-# LOSSES = ['log_loss', 'loss', 'mse', 'huber1']
-LOSSES = ['log_loss', 'loss', 'mse']
 
 
 def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='./data',
@@ -27,7 +23,7 @@ def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='
 
     with summary_writer.as_default():
         # Model def
-        learning_rate = CustomSchedule(hparams.d_model, hparams.warmup_steps)
+        learning_rate = get_schedule(hparams.lr)(hparams)
         optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
         train_losses = {}
         for loss in LOSSES:
