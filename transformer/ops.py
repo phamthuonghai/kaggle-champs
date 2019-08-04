@@ -74,3 +74,10 @@ def eval_step(feature, transformer):
     losses = loss_function(feature['target'], predictions, feature['target_mask'])
 
     return losses
+
+
+def predict_step(feature, transformer):
+    enc_padding_mask = create_padding_mask(feature['atom'])
+    predictions, _ = transformer(feature, False, enc_padding_mask)
+
+    return predictions

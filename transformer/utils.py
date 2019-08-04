@@ -169,6 +169,8 @@ def get_dataset(filepath, batch_size, val=None, bond_target='all'):
                 d[k] = tf.constant(v, shape=v.shape, dtype=tf.int64)
             elif v.dtype.type is np.float64:
                 d[k] = tf.constant(v, shape=v.shape, dtype=tf.float32)
+            elif v.dtype.type is np.str_:
+                d[k] = tf.constant(v, shape=v.shape, dtype=tf.string)
 
         d = tf.data.Dataset.from_tensor_slices(d)
 

@@ -2,11 +2,13 @@ import os
 import time
 
 import fire
+import pandas as pd
 import tensorflow as tf
+from tqdm import tqdm
 
 import hyperparams
 from models import Transformer
-from ops import get_schedule, train_step, eval_step, LOSSES
+from ops import get_schedule, train_step, eval_step, predict_step, LOSSES
 from utils import get_dataset
 
 
@@ -71,9 +73,42 @@ def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='
             print('Saving checkpoint for epoch {} at {}'.format(epoch + 1, ckpt_save_path))
 
 
+def predict(hparam_set='default', data_path='./data', bond_target='all', test_batch_size=512,
+            raw_test='../input/test.csv'):
+    hparams = hyperparams.get_hparams(hparam_set)
+    checkpoint_path = f'./checkpoints/{bond_target}/{hparam_set}/'
+    # Load data
+    test_dataset = get_dataset(
+        os.path.join(data_path, 'test.pkl'), test_batch_size, bond_target=bond_target)
+    transformer = Transformer(hparams)
+
+    ckpt = tf.train.Checkpoint(transformer=transformer)
+    ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
+    ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
+
+    raw_test_df = pd.read_csv(raw_test)
+    if bond_target != 'all':
+        raw_test_df = raw_test_df[raw_test_df['type'] == bond_target]
+    raw_test_df['scalar_coupling_constant'] = None
+    mol_test_df = raw_test_df.groupby('molecule_name').aggregate(list)
+    raw_test_df.set_index('id', inplace=True)
+
+    for (batch, feature) in tqdm(enumerate(test_dataset)):
+        batch_predictions = predict_step(feature, transformer)
+        for mol_name, pred in zip(feature['name'].numpy(), batch_predictions):
+            mol_name = mol_name.decode()
+            for _id, (test_id, id_0, id_1) in enumerate(zip(mol_test_df.at[mol_name, 'id'],
+                                                            mol_test_df.at[mol_name, 'atom_index_0'],
+                                                            mol_test_df.at[mol_name, 'atom_index_1'])):
+                raw_test_df.at[test_id, 'scalar_coupling_constant'] = pred[id_0, id_1]
+
+    output_file = f'output/{bond_target}_{hparam_set}.csv'
+    raw_test_df.to_csv(output_file, columns=['scalar_coupling_constant'])
+
+
 if __name__ == '__main__':
     fire.Fire({
         'train': train,
         # 'evaluate': evaluate,
-        # 'predict': predict,
+        'predict': predict,
     })
