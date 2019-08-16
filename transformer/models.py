@@ -213,9 +213,9 @@ def cartesian(a, b):
     return tf.concat([tile_a, tile_b], axis=-1)
 
 
-class Transformer(tf.keras.Model):
+class Model(tf.keras.Model):
     def __init__(self, hparams):
-        super(Transformer, self).__init__()
+        super(Model, self).__init__()
 
         self.encoder = Encoder(hparams)
 

@@ -194,6 +194,22 @@ def convert_mg(input_path='../input/MG.json', output_path='../input/MG.pkl'):
         pickle.dump(res, out_file)
 
 
+def get_model(model_name):
+    if model_name == 'transformer':
+        from transformer.models import Model
+    else:
+        from dense.models import Model
+    return Model
+
+
+def get_hparams(model_name, hparam_set):
+    if model_name == 'transformer':
+        from transformer.hyperparams import get_hparams
+    else:
+        from dense.hyperparams import get_hparams
+    return get_hparams(hparam_set)
+
+
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s', level=logging.INFO)
     fire.Fire({

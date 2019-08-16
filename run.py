@@ -6,18 +6,16 @@ import pandas as pd
 import tensorflow as tf
 from tqdm import tqdm
 
-import hyperparams
-from models import Transformer
 from ops import get_schedule, train_step, eval_step, predict_step, LOSSES
-from utils import get_dataset
+from utils import get_dataset, get_model, get_hparams
 
 
-def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='./data',
+def train(n_epochs=1000, train_batch_size=256, model='transformer', hparam_set='default', data_path='./data',
           log_freq=500, val_size=1000, bond_target='all', load_ckpt=False):
-    hparams = hyperparams.get_hparams(hparam_set)
-    checkpoint_path = f'./checkpoints/{bond_target}/{hparam_set}/'
+    hparams = get_hparams(model, hparam_set)
+    checkpoint_path = f'./checkpoints/{bond_target}/{model}/{hparam_set}/'
 
-    summary_writer = tf.summary.create_file_writer(f'./summaries/{bond_target}/{hparam_set}/')
+    summary_writer = tf.summary.create_file_writer(f'./summaries/{bond_target}/{model}/{hparam_set}/')
 
     # Load data
     val_dataset, train_dataset = get_dataset(
@@ -30,7 +28,7 @@ def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='
         train_losses = {}
         for loss in LOSSES:
             train_losses[loss] = tf.keras.metrics.Mean(name=f'train_{loss}')
-        transformer = Transformer(hparams)
+        transformer = get_model(model)(hparams)
 
         # Checkpoint init
         ckpt = tf.train.Checkpoint(transformer=transformer, optimizer=optimizer)
@@ -73,14 +71,15 @@ def train(n_epochs=1000, train_batch_size=128, hparam_set='default', data_path='
             print('Saving checkpoint for epoch {} at {}'.format(epoch + 1, ckpt_save_path))
 
 
-def predict(hparam_set='default', data_path='./data', bond_target='all', test_batch_size=512,
-            raw_test='../input/test.csv'):
-    hparams = hyperparams.get_hparams(hparam_set)
-    checkpoint_path = f'./checkpoints/{bond_target}/{hparam_set}/'
+def predict(model='transformer', hparam_set='default', data_path='./data', bond_target='all', test_batch_size=2048,
+            raw_test='../input/test.csv', checkpoint_path=''):
+    hparams = get_hparams(model, hparam_set)
+    if checkpoint_path == '':
+        checkpoint_path = f'./checkpoints/{bond_target}/{hparam_set}/'
     # Load data
     test_dataset = get_dataset(
         os.path.join(data_path, 'test.pkl'), test_batch_size, bond_target=bond_target)
-    transformer = Transformer(hparams)
+    transformer = get_model(model)(hparams)
 
     ckpt = tf.train.Checkpoint(transformer=transformer)
     ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
@@ -97,6 +96,7 @@ def predict(hparam_set='default', data_path='./data', bond_target='all', test_ba
         batch_predictions = predict_step(feature, transformer)
         for mol_name, pred in zip(feature['name'].numpy(), batch_predictions):
             mol_name = mol_name.decode()
+            pred = pred.numpy()
             for _id, (test_id, id_0, id_1) in enumerate(zip(mol_test_df.at[mol_name, 'id'],
                                                             mol_test_df.at[mol_name, 'atom_index_0'],
                                                             mol_test_df.at[mol_name, 'atom_index_1'])):
@@ -109,6 +109,5 @@ def predict(hparam_set='default', data_path='./data', bond_target='all', test_ba
 if __name__ == '__main__':
     fire.Fire({
         'train': train,
-        # 'evaluate': evaluate,
         'predict': predict,
     })
